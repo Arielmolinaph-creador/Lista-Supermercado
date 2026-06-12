@@ -10,11 +10,31 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 
 # ── Configuración desde variables de entorno ──────────────────────────────────
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN  = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_ACCOUNT_SID     = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN      = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")  # ej: whatsapp:+14155238886
-SPREADSHEET_ID     = os.environ.get("SPREADSHEET_ID")
-GOOGLE_CREDS_JSON  = os.environ.get("GOOGLE_CREDS_JSON")  # contenido del JSON como string
+SPREADSHEET_ID         = os.environ.get("SPREADSHEET_ID")
+GOOGLE_CREDS_JSON      = os.environ.get("GOOGLE_CREDS_JSON")  # contenido del JSON como string
+
+# ── Números de los usuarios ───────────────────────────────────────────────────
+USUARIOS = {
+    "whatsapp:+5491169667092": "Ariel",
+    "whatsapp:+5491165297726": "Anto",
+}
+
+def notificar_otro(sender, mensaje):
+    """Manda un mensaje al otro usuario."""
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        for numero, nombre in USUARIOS.items():
+            if numero != sender:
+                client.messages.create(
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=numero,
+                    body=mensaje
+                )
+    except Exception as e:
+        print(f"ERROR notificando: {e}")
 
 # ── Conexión a Google Sheets ──────────────────────────────────────────────────
 def get_sheet():
@@ -59,7 +79,9 @@ def webhook():
             all_rows = sheet.get_all_values()
             if len(all_rows) > 1:
                 sheet.delete_rows(2, len(all_rows))
+            quien = USUARIOS.get(sender, "Alguien")
             msg.body("🗑️ Lista borrada! Podés empezar de nuevo.")
+            notificar_otro(sender, f"🗑️ *{quien}* borró la lista del super.")
 
         # ── COMANDO: ayuda ────────────────────────────────────────────────────
         elif incoming_msg in ["ayuda", "help", "comandos"]:
@@ -84,14 +106,17 @@ def webhook():
             productos_nuevos = [p for p in productos_nuevos if p]  # filtra vacíos
 
             fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
-            filas = [[p.capitalize(), profile_name or sender, fecha] for p in productos_nuevos]
+            quien = USUARIOS.get(sender, profile_name or "Alguien")
+            filas = [[p.capitalize(), quien, fecha] for p in productos_nuevos]
             sheet.append_rows(filas)
 
             if len(productos_nuevos) == 1:
                 msg.body(f"✅ *{productos_nuevos[0].capitalize()}* agregado a la lista!")
+                notificar_otro(sender, f"🛒 *{quien}* agregó *{productos_nuevos[0].capitalize()}* a la lista del super.")
             else:
                 items = ", ".join(p.capitalize() for p in productos_nuevos)
                 msg.body(f"✅ Agregué {len(productos_nuevos)} productos: {items}")
+                notificar_otro(sender, f"🛒 *{quien}* agregó {len(productos_nuevos)} productos a la lista: {items}")
 
     except Exception as e:
         print(f"ERROR: {e}")
